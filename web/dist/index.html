@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IPT-Lens</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">IP</span>
+      <span class="title">IPT-Lens</span>
+      <span id="ver" class="ver"></span>
+      <span id="conn" class="pill pill-muted"><i class="dot"></i><span id="conn-text">Connecting</span></span>
+    </div>
+    <nav class="seg mode-switch" aria-label="View">
+      <button class="seg-btn" data-mode="simple" title="Who can reach which port">Simple</button>
+      <button class="seg-btn" data-mode="advanced" title="Every iptables rule, chain by chain">Advanced</button>
+    </nav>
+    <nav id="table-nav" class="seg" aria-label="Tables">
+      <button class="seg-btn active" data-table="filter" title="Allow and block rules">FILTER</button>
+      <button class="seg-btn" data-table="nat" title="Address translation (NAT)">NAT</button>
+      <button class="seg-btn" data-table="mangle" title="Packet marking">MANGLE</button>
+      <button class="seg-btn" data-table="raw" title="Rules before connection tracking">RAW</button>
+    </nav>
+    <button id="btn-theme" class="icon-ghost" type="button"></button>
+  </header>
+
+  <div id="mock-strip" class="strip" hidden>Demo mode: sample data, not a real firewall</div>
+
+  <div id="banner" class="banner" hidden>
+    <span class="banner-text">Change applied for now. Can you still reach the server? Keep it within <b class="mono" id="wd-timer">60</b> seconds, or it is undone on its own.</span>
+    <button id="btn-undo" class="btn btn-ghost btn-sm" type="button">Undo now</button>
+    <button id="btn-confirm" class="btn btn-warn btn-sm" type="button">Keep this change</button>
+  </div>
+
+  <main id="simple" class="simple" hidden>
+    <header class="s-head">
+      <h1>Who can reach this server</h1>
+      <p id="s-summary" class="s-summary"></p>
+      <p>Nothing changes until you review and apply!!!.</p>
+    </header>
+
+    <section id="s-verdict" class="s-verdict" aria-label="How exposed this server is" hidden></section>
+
+    <section id="s-vpn-card" class="s-card" aria-labelledby="s-vpn-title">
+      <div class="s-card-h s-vpn-h">
+        <h2 id="s-vpn-title">Your VPN and trusted addresses!!!</h2>
+        <p id="s-vpn-status" class="hint"></p>
+        <button id="s-vpn-change" class="btn btn-ghost btn-sm" type="button" hidden>Change!!!</button>
+      </div>
+      <div id="s-vpn-edit" class="s-vpn-edit">
+        <div id="s-vpn-list" class="s-chips"></div>
+        <div class="s-inline">
+          <input id="s-vpn-subnet" class="mono" placeholder="Or a VPN subnet, e.g. 100.64.0.0/10" aria-label="VPN subnet">
+          <button id="s-vpn-add" class="btn btn-ghost btn-sm" type="button">Add subnet</button>
+        </div>
+        <div class="s-trusted">
+          <label for="s-trusted-addr">Trusted addresses <span class="hint">Let in where “VPN only” is set, even without the VPN. For example your office IP.</span></label>
+          <div id="s-trusted-list" class="s-chips"></div>
+          <div class="s-inline">
+            <input id="s-trusted-addr" class="mono" placeholder="203.0.113.7 or 2001:db8::/48">
+            <button id="s-trusted-add" class="btn btn-ghost btn-sm" type="button">Add address</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="s-card s-ports" aria-labelledby="s-ports-title">
+      <div class="s-card-h">
+        <h2 id="s-ports-title">Who can connect to each port</h2>
+      </div>
+      <div id="s-rows" class="s-rows"></div>
+      <div id="s-default" class="s-row s-default"></div>
+      <button id="s-add-port" class="btn btn-ghost btn-sm s-add-port" type="button">Add a port</button>
+    </section>
+
+    <p id="s-notes" class="hint s-notes"></p>
+
+    <details id="s-history" class="s-history">
+      <summary>Change history</summary>
+      <ol id="s-history-list" class="s-history-list"></ol>
+    </details>
+  </main>
+
+  <div id="s-bar" class="s-bar" hidden>
+    <span id="s-bar-text"></span>
+    <button id="s-discard" class="btn btn-ghost btn-sm" type="button">Discard</button>
+    <button id="s-review" class="btn btn-primary btn-sm" type="button">Review and apply</button>
+  </div>
+
+  <main id="advanced" class="layout" hidden>
+    <aside class="sidebar">
+      <details class="help" open>
+        <summary>How this works</summary>
+        <ul>
+          <li><b>INPUT</b>: traffic to the server itself (SSH, this panel).</li>
+          <li><b>DOCKER-USER</b>: traffic forwarded to Docker containers.</li>
+          <li>Every change is temporary at first. Press <b>Keep this change</b> in the yellow bar to keep it, or <b>Undo now</b>; otherwise it is undone on its own.</li>
+          <li>Rules with a lock are managed by Docker, Kubernetes, libvirt or ufw and cannot be changed here.</li>
+        </ul>
+      </details>
+
+      <section class="panel">
+        <header class="panel-h">
+          <h2>Packet simulator</h2>
+          <p>Shows which rule a packet would hit. No packet is sent.</p>
+        </header>
+        <div class="grid2">
+          <label>Source IP<input id="sim-src" class="mono" value="100.64.0.15"></label>
+          <label>Destination IP<input id="sim-dst" class="mono" value="172.18.0.4"></label>
+          <label>In interface<input id="sim-in" class="mono" value="wg0"></label>
+          <label>Out interface<input id="sim-out" class="mono" value="docker0"></label>
+          <label>Protocol
+            <select id="sim-proto"><option>tcp</option><option>udp</option><option>icmp</option></select>
+          </label>
+          <label>Port<input id="sim-port" class="mono" value="5432"></label>
+          <label class="span2">Connection state
+            <select id="sim-ct">
+              <option value="NEW">New connection (NEW)</option>
+              <option value="ESTABLISHED">Established (ESTABLISHED)</option>
+              <option value="RELATED">Related (RELATED)</option>
+            </select>
+          </label>
+        </div>
+        <button id="btn-sim" class="btn btn-primary btn-block">Simulate packet</button>
+        <div id="sim-result" hidden></div>
+      </section>
+
+      <section class="panel">
+        <header class="panel-h">
+          <h2>Add a rule</h2>
+          <p>For example: allow port 8080 over the VPN (wg0).</p>
+        </header>
+        <div class="grid2">
+          <label class="span2">Apply to
+            <select id="add-where">
+              <option value="INPUT">The server itself (INPUT)</option>
+              <option value="DOCKER-USER">Docker containers (DOCKER-USER)</option>
+            </select>
+          </label>
+          <label>Action
+            <select id="add-action">
+              <option value="ACCEPT">Allow</option>
+              <option value="DROP">Block</option>
+            </select>
+          </label>
+          <label>Protocol
+            <select id="add-proto">
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+              <option value="">Any</option>
+            </select>
+          </label>
+          <label>Port<input id="add-port" class="mono" inputmode="numeric" placeholder="8080"></label>
+          <label>Interface<input id="add-iface" class="mono" placeholder="wg0"></label>
+          <label class="span2">Source IP (optional)<input id="add-src" class="mono" placeholder="empty = any source"></label>
+        </div>
+        <p id="add-where-hint" class="hint"></p>
+        <div id="add-preview" class="preview"></div>
+        <button id="btn-add" class="btn btn-primary btn-block">Add rule</button>
+        <p class="hint">The rule is inserted at the top of the chain (position 1). Confirm it afterwards.</p>
+      </section>
+    </aside>
+
+    <section class="main">
+      <div class="toolbar">
+        <div>
+          <h1>Rules</h1>
+          <p id="table-desc" class="hint"></p>
+        </div>
+        <label class="check"><input id="show-sys" type="checkbox"> Show system chains</label>
+        <span id="sys-count" class="hint"></span>
+      </div>
+      <div id="chains" class="chains"></div>
+    </section>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <div id="modal" class="modal-wrap" hidden>
+    <div id="modal-backdrop" class="modal-backdrop"></div>
+    <div id="modal-box" class="modal" role="dialog" aria-modal="true"></div>
+  </div>
+
+  <script src="app.js"></script>
+  <script src="simple.js"></script>
+</body>
+</html>
